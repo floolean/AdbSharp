@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,60 +14,143 @@ namespace AdbSharp
         public delegate void OnOutput(string output);
         public static event OnOutput Output;
 
-        public static bool AlwaysShowConsole
+        public delegate void OnCommand(string command);
+        public static event OnCommand Command;
+
+        public delegate void OnException(Exception exception);
+        public static event OnException Exception;
+
+        public static bool AlwaysCreateWindow
         {
             get;
             set;
         }
 
-        public static Task<string> Execute(string path, string arguments = null, int timeout = 0, bool showConsole = false)
+        public static Task<string> Execute(string command, string arguments = null, int timeout = 0, bool showConsole = false)
         {
 
             return Task.Run<string>(() =>
             {
 
-                var process = new Process()
+                try
                 {
-                    StartInfo = new ProcessStartInfo(path, arguments)
+
+                    var process = new Process()
                     {
-                        UseShellExecute = false,
-                        CreateNoWindow = !showConsole || !AlwaysShowConsole,
-                        RedirectStandardOutput = true
+                        StartInfo = new ProcessStartInfo(command, arguments)
+                        {
+                            UseShellExecute = false,
+                            CreateNoWindow = !showConsole || !AlwaysCreateWindow,
+                            RedirectStandardOutput = true
+                        }
+                    };
+
+                    if (Command != null)
+                        Command(string.Format(">> {0} {1}\n\n", command, arguments));
+
+                    process.Start();
+
+                    if (timeout > 0)
+                    {
+
+                        Task.Run(() =>
+                        {
+
+                            Task.Delay(timeout).Wait();
+
+                            if (!process.HasExited)
+                                process.Kill();
+
+                        });
+
                     }
-                };
 
-                if (Output != null)
-                    Output(string.Format("\n>> {0} {1}\n\n", path, arguments));
+                    var output = process.StandardOutput.ReadToEnd();
 
-                process.Start();
-
-                if (timeout > 0)
-                {
-
-                    Task.Run(() =>
+                    if (Output != null)
                     {
+                        Output(output);
+                    }
 
-                        Task.Delay(timeout).Wait();
-
-                        if (!process.HasExited)
-                            process.Kill();
-
-                    });
+                    return output;
 
                 }
-
-                var output = process.StandardOutput.ReadToEnd();
-
-                if (Output != null)
+                catch (Exception ex)
                 {
-                    Output(output);
+
+                    if (Exception != null)
+                        Exception(ex);
+
                 }
 
-                return output;
+                return string.Empty;
 
             });
 
         }
+
+        public static Task Execute(string command, string arguments, Stream outStream, Stream inStream = null, Stream errStream = null, bool showConsole = false)
+        {
+
+            if (outStream == null)
+                throw new ArgumentNullException("outStream");
+
+            return Task.Run(() =>
+            {
+
+                try
+                {
+
+                    var process = new Process()
+                    {
+                        StartInfo = new ProcessStartInfo(command, arguments)
+                        {
+                            UseShellExecute = false,
+                            CreateNoWindow = !showConsole || !AlwaysCreateWindow,
+                            RedirectStandardOutput = true
+                        }
+                    };
+
+                    if (Command != null)
+                        Command(string.Format(">> {0} {1}\n\n", command, arguments));
+
+                    //killProcessAction = () =>
+                    //{
+                    //    if (!process.HasExited)
+                    //        process.Kill();
+                    //};
+
+                    process.Start();
+
+                    if (inStream != null)
+                        inStream.CopyToAsync(process.StandardInput.BaseStream);
+
+                    if (errStream != null)
+                        process.StandardError.BaseStream.CopyToAsync(errStream);
+
+                    var fs = process.StandardOutput.BaseStream as FileStream;
+
+                    while (fs.CanRead)
+                        fs.CopyTo(outStream);
+
+                    if (Output != null)
+                    {
+                        Output(string.Format("[Binary length={0}]", outStream.Length));
+                    }
+
+                }
+                catch (Exception ex)
+                {
+
+                    if (Exception != null)
+                        Exception(ex);
+
+                }
+
+            });
+
+        }
+
 
     }
 }

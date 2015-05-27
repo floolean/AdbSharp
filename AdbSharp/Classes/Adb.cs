@@ -13,6 +13,8 @@ namespace AdbSharp
 
         const string ADB_PATH = "adb";
         const string ADB_SHELL_COMMAND = "shell {0}";
+        const string ADB_KILLSERVER_COMMAND = "kill-server";
+        const string ADB_STARTSERVER_COMMAND = "start-server";
 
         const string ADB_LIST_DEVICES_COMMAND = "devices";
         const string LIST_PACKAGES_COMMAND = "pm -l";
@@ -20,11 +22,19 @@ namespace AdbSharp
         const string UNINSTALL_PACKAGE_COMMAND = "pm uninstall -k {0}";
         const string PUSH_FILE_COMMAND = "push \"{0}\" \"{1}\"";
         const string PULL_FILE_COMMAND = "pull \"{0}\" \"{1}\"";
+        const string DELETE_FILE_COMMAND = "rm \"{0}\"";
+        const string DELETE_DIRECTORY_COMMAND = "rmdir \"{0}\"";
         const string LOGCAT_COMMAND = "logcat";
         const string PS_COMMAND = "ps";
+        const string REBOOT_COMMAND = "reboot";
+        const string WAITFORDEVICE_COMMAND = "wait-for-device";
         
         const string DUMPSYS_COMMAND = "dumpsys";
         const string KILL_COMMAND = "kill -{0} {1}";
+
+        const string SCREENCAP_BIN_COMMAND = "screencap -p";
+        const string SCREENCAP_TOFILE_COMMAND = "screencap -p {0}";
+        const string SCREENCAP_PATH_FORMAT = "\"/sdcard/{0}\"";
 
         const string GET_INPUT_DEVICES_COMMAND = "getevent";
         const string SEND_TEXT_INPUT_COMMAND = "input text \"{0}\"";
@@ -47,6 +57,7 @@ namespace AdbSharp
         
 
         static string s_AdbPath;
+        static bool s_Started = false;
         static List<Device> s_Devices = new List<Device>();
 
         public static string AdbPath
@@ -127,12 +138,7 @@ namespace AdbSharp
 
         }
 
-        public static async Task<List<string>> GetRemoteStorageLocations()
-        {
-            return await GetRemoteStorageLocations(null);
-        }
-
-        public static async Task<List<string>> GetRemoteStorageLocations(Device device)
+        public static async Task<List<string>> GetRemoteStorageLocations(Device device = null)
         {
 
             var mountOutput = await ExecuteAdbShellCommand(LIST_MOUNT_COMMAND, device);
@@ -164,78 +170,104 @@ namespace AdbSharp
 
         }
 
-        public static async Task<bool> PushFile(string localFilePath, string remoteFilePath)
-        {
-            return await PushFile(null, localFilePath, remoteFilePath);
-        }
-
-        public static async Task<bool> PushFile(Device device, string localFilePath, string remoteFilePath)
+        public static async Task<bool> PushFile(string localFilePath, string remoteFilePath, Device device = null)
         {
 
             var pushCommand = string.Format(PUSH_FILE_COMMAND, localFilePath, remoteFilePath);
 
             var output = await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(pushCommand, device));
 
-            return await RemoteFileExists( device, remoteFilePath );
+            return await RemoteFileExists(remoteFilePath, device);
 
         }
 
-        public static async Task<bool> PullFile(string localFilePath, string remoteFilePath)
-        {
-            return await PullFile(null, localFilePath, remoteFilePath);
-        }
-
-        public static async Task<bool> PullFile(Device device, string localFilePath, string remoteFilePath)
+        public static async Task<bool> PullFile(string localFilePath, string remoteFilePath, Device device = null)
         {
 
-            var pushCommand = string.Format(PULL_FILE_COMMAND, localFilePath, remoteFilePath);
+            var pullCommand = string.Format(PULL_FILE_COMMAND, remoteFilePath, localFilePath);
 
-            var output = await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(pushCommand, device));
+            var output = await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(pullCommand, device));
 
-            return await RemoteFileExists(device, remoteFilePath);
+            return File.Exists(localFilePath);
 
         }
 
-        public static async Task<bool> RemoteFileExists(string remoteFilePath)
-        {
-            return await RemoteFileExists(null, remoteFilePath);
-        }
-
-        public static async Task<bool> RemoteFileExists(Device device, string remoteFilePath)
+        public static async Task<bool> RemoteFileExists(string remoteFilePath, Device device = null)
         {
 
-            var remoteFileName = Path.GetFileName( remoteFilePath );
+            var remoteFileName = PathNix.GetFilename(remoteFilePath);
 
-            var remoteDirectoryName = remoteFilePath.Replace(remoteFileName, string.Empty);
+            var remoteDirectoryName = PathNix.GetDirectoryPath(remoteFilePath);
 
-            var output = await ListRemoteDirectory( device, remoteDirectoryName );
+            var listing = await ListRemoteDirectory(remoteDirectoryName, device);
 
-            return output.Any(line => !string.IsNullOrEmpty(line) && line.Substring(0, line.Length - 2 ) == remoteFileName);
+            return listing != null && listing.Files.Any(entry => entry.Name == remoteFileName);
 
         }
 
-        public static async Task<List<string>> ListRemoteDirectory(string remotePath)
+        public static async Task<bool> RemoteDirectoryExists(string remotePath, Device device = null)
         {
-            return await ListRemoteDirectory(null, remotePath);
+
+            var listing = await ListRemoteDirectory(remotePath, device);
+
+            return listing != null && listing.Directories.Any(entry => entry.Path == remotePath);
+
         }
 
-        public static async Task<List<string>> ListRemoteDirectory(Device device, string remotePath)
+        public static async Task<DirectoryListing> ListRemoteDirectory(string remotePath, Device device = null)
         {
 
             var listDirectoryCommand = string.Format(LIST_DIRECTORY_COMMAND, remotePath);
 
             var output = await ExecuteAdbShellCommand(listDirectoryCommand, device);
 
-            return TokenizeString(output).ToList();
+            var lines = TokenizeString(output);
+
+            var listing = new DirectoryListing()
+            {
+                Path = remotePath
+            };
+
+            foreach (var line in lines)
+	        {
+                listing.AddEntry(line.Trim());
+	        }
+
+            return listing;
 
         }
 
-        public static async Task<bool> IsPackageInstalled(string packageName)
+        public static async Task<bool> DeleteRemoteFile(string remoteFilePath, Device device = null)
         {
-            return await IsPackageInstalled(null, packageName);
+
+            var deleteFileCommand = string.Format(DELETE_FILE_COMMAND, remoteFilePath);
+
+            var filename = PathNix.GetFilename(remoteFilePath);
+
+            var remotePath = PathNix.GetDirectoryPath(remoteFilePath);
+
+            var output = await ExecuteAdbShellCommand(deleteFileCommand, device);
+
+            var listing = await ListRemoteDirectory(remotePath, device);
+
+            return !listing.Directories.Any(entry => entry.Path == remoteFilePath);
+
         }
 
-        public static async Task<bool> IsPackageInstalled(Device device, string packageName)
+        public static async Task<bool> DeleteRemoteDirectory(string remotePath, Device device = null)
+        {
+
+            var deleteDirectoryCommand = string.Format(DELETE_DIRECTORY_COMMAND, remotePath);
+
+            var output = await ExecuteAdbShellCommand(deleteDirectoryCommand, device);
+
+            var listing = await ListRemoteDirectory(remotePath, device);
+
+            return !listing.Directories.Any(entry => entry.Path == remotePath);
+
+        }
+
+        public static async Task<bool> IsPackageInstalled(string packageName, Device device = null)
         {
 
             var output = await ExecuteAdbShellCommand(LIST_PACKAGES_COMMAND, device);
@@ -248,12 +280,7 @@ namespace AdbSharp
 
         }
 
-        public static async Task<bool> UninstallPackage(string packageName)
-        {
-            return await UninstallPackage(null, packageName);
-        }
-
-        public static async Task<bool> UninstallPackage(Device device, string packageName)
+        public static async Task<bool> UninstallPackage(string packageName, Device device = null)
         {
 
             var uninstallPackageCommand = string.Format(UNINSTALL_PACKAGE_COMMAND, packageName);
@@ -267,12 +294,7 @@ namespace AdbSharp
 
         }
 
-        public static async Task<bool> IsPackageRunning(string packageName)
-        {
-            return await IsPackageRunning(null, packageName);
-        }
-
-        public static async Task<bool> IsPackageRunning(Device device, string packageName)
+        public static async Task<bool> IsPackageRunning(string packageName, Device device = null)
         {
 
             var processes = await GetRunningProcesses(device);
@@ -281,9 +303,9 @@ namespace AdbSharp
 
         }
 
-        public static async Task<bool> InstallAPK(string apkFilePath)
+        public static Task<bool> InstallAPK(string apkFilePath)
         {
-            return await InstallAPK(null, apkFilePath);
+            return InstallAPK(null, apkFilePath);
         }
 
         public static async Task<bool> InstallAPK(Device device, string apkFilePath )
@@ -297,19 +319,16 @@ namespace AdbSharp
 
         }
 
-        public static async Task<bool> StartActivity(string packageName, string activity)
-        {
-            return await StartActivity(null, packageName, activity);
-        }
-
-        public static async Task<bool> StartActivity(Device device, string packageName, string activity)
+        public static async Task<bool> StartActivity(string packageName, string activity, Device device = null)
         {
 
             var startActivityCommand = string.Format(START_ACTIVITY_COMMAND, packageName, activity);
 
             var output = await ExecuteAdbShellCommand(startActivityCommand, device);
 
-            return await IsPackageRunning( device, packageName );
+            await Task.Delay(1000);
+
+            return await IsPackageRunning(packageName, device);
 
         }
 
@@ -358,11 +377,6 @@ namespace AdbSharp
             return SendSignalToProcess(process.Pid, 9, device);
         }
 
-        public static Task<bool> SendSignalToProcess(int pid, int signal)
-        {
-            return SendSignalToProcess(pid, signal);
-        }
-
         public static Task<bool> SendSignalToProcess(AndroidProcess process, int signal)
         {
             return SendSignalToProcess(process, signal);
@@ -381,6 +395,46 @@ namespace AdbSharp
             var output = await ExecuteAdbShellCommand(ArgumentsWithDeviceSelection(sendSignalCommand, device), device, 0);
 
             return string.IsNullOrEmpty(output);
+
+        }
+
+        public static async Task<Stream> TakeScreenshot(Device device = null)
+        {
+
+            var outStream = new MemoryStream();
+
+            await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(SCREENCAP_BIN_COMMAND, device), outStream);
+
+            return outStream;
+
+        }
+
+        public static async Task<Stream> TakeScreenshot(string filePath = null, Device device = null)
+        {
+
+            if (string.IsNullOrEmpty(filePath))
+                filePath = Path.GetTempFileName();
+
+            var filename = Path.GetFileName( filePath );
+
+            var remoteFilePath = string.Format( SCREENCAP_PATH_FORMAT, filename );
+
+            var screencapCommand = string.Format( SCREENCAP_TOFILE_COMMAND, remoteFilePath );
+
+            var output = await ExecuteAdbShellCommand(screencapCommand, device);
+
+            var pulled = await PullFile(filePath, remoteFilePath);
+
+            if (pulled && File.Exists( filePath ) )
+            {
+
+                await DeleteRemoteFile(remoteFilePath, device);
+
+                return File.OpenRead( filePath );
+
+            }
+            else
+                return null;
 
         }
 
@@ -492,20 +546,6 @@ namespace AdbSharp
 
         }
 
-        public static Task<Prop> GetDeviceProp(string propKey)
-        {
-            return GetDeviceProp(null, propKey);
-        }
-
-        public static async Task<Prop> GetDeviceProp(Device device, string propKey)
-        {
-
-            var propTree = await GetDevicePropTree(device);
-
-            return propTree.FindProp(propKey);
-
-        }
-
         public static async Task<PropTree> GetDevicePropTree(Device device = null)
         {
 
@@ -537,6 +577,22 @@ namespace AdbSharp
 
         }
 
+        public static async Task<Prop> GetDeviceProp(string propKey, Device device = null)
+        {
+
+            var getPropCommand = string.Format(GET_DEVICE_PROPS_COMMAND, propKey);
+
+            var propValue = await ExecuteAdbShellCommand(getPropCommand, device);
+
+            return new Prop()
+            {
+                Key = propKey,
+                Value = propValue.Trim(),
+                Name = propKey.Split( new char[]{'.'} ).Last()
+            };
+
+        }
+
         public static Task<string> SetDeviceProp(string propKey, string value)
         {
             return SetDeviceProp(null, propKey, value);
@@ -547,7 +603,7 @@ namespace AdbSharp
 
             var setPropCommand = string.Format(SET_DEVICE_PROP_COMMAND, propKey);
 
-            return Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(setPropCommand, device));
+            return ExecuteAdbCommand(setPropCommand, device);
 
         }
 
@@ -561,18 +617,45 @@ namespace AdbSharp
             return ExecuteAdbShellCommand( DUMPSYS_COMMAND, device, 0);
         }
 
+        public static Task Reboot( bool waitForBoot = false, Device device = null)
+        {
+
+            var rebootTask = ExecuteAdbCommand(REBOOT_COMMAND, device);
+
+            if (waitForBoot)
+            {
+
+                rebootTask.Wait();
+
+                return ExecuteAdbCommand(WAITFORDEVICE_COMMAND, device);
+
+            }
+            else
+                return rebootTask;
+
+        }
+
         public static Task<string> ExecuteAdbCommand(string command, int timeout = 0)
         {
+
+            EnsureServerIsRunning();
+
             return Shell.Execute(AdbPath, command, timeout);
+
         }
 
         public static Task<string> ExecuteAdbCommand(string command, Device device = null, int timeout = 0)
         {
+
+            EnsureServerIsRunning();
+
             return Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(command, device), timeout);
         }
 
         public static Task<string> ExecuteAdbShellCommand(string command, int timeout = 0)
         {
+
+            EnsureServerIsRunning();
 
             var adbShellCommand = string.Format(ADB_SHELL_COMMAND, command);
 
@@ -582,6 +665,8 @@ namespace AdbSharp
 
         public static Task<string> ExecuteAdbShellCommand(string command, Device device = null, int timeout = 0)
         {
+
+            EnsureServerIsRunning();
 
             var adbShellCommand = string.Format(ADB_SHELL_COMMAND, command);
 
@@ -603,13 +688,19 @@ namespace AdbSharp
             return string.Format("-s {0} {1}", deviceName, command);
         }
 
+        static async void EnsureServerIsRunning()
+        {
+            if (!s_Started)
+                await Shell.Execute(AdbPath, ADB_STARTSERVER_COMMAND);
+        }
+
         static string[] TokenizeString(string text, string separator = "\n")
         {
 
             if (text == null)
                 return new string[0];
 
-            return text.Split(new string[] { separator }, StringSplitOptions.None);
+            return text.Split(new string[] { separator }, StringSplitOptions.RemoveEmptyEntries);
 
         }
 

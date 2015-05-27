@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -48,17 +49,32 @@ namespace AdbSharp
 
         public Task<bool> PushFile(string localFilePath, string remoteFilePath)
         {
-            return Adb.PushFile(this,localFilePath, remoteFilePath);
+            return Adb.PushFile(localFilePath, remoteFilePath, this);
+        }
+
+        public Task<bool> PullFile(string localFilePath, string remoteFilePath)
+        {
+            return Adb.PullFile(localFilePath, remoteFilePath, this);
         }
 
         public Task<bool> FileExists(string filePath)
         {
-            return Adb.RemoteFileExists(this, filePath);
+            return Adb.RemoteFileExists(filePath, this);
         }
 
-        public Task<List<string>> ListDirectory(string path)
+        public Task<bool> DeleteRemoteFile(string filePath)
         {
-            return Adb.ListRemoteDirectory(this, path);
+            return Adb.DeleteRemoteFile(filePath, this);
+        }
+
+        public Task<bool> DeleteRemoteDirectory(string remotePath)
+        {
+            return Adb.DeleteRemoteDirectory(remotePath, this);
+        }
+
+        public Task<DirectoryListing> ListDirectory(string path)
+        {
+            return Adb.ListRemoteDirectory(path, this);
         }
 
         public Task<bool> InstallAPK(string apkFilePath)
@@ -68,27 +84,27 @@ namespace AdbSharp
 
 		public Task<bool> IsPackageInstalled( string packageName )
 		{
-            return Adb.IsPackageInstalled(this, packageName);
+            return Adb.IsPackageInstalled(packageName, this);
 		}
 
         public Task<bool> UninstallPackage(string packageName)
         {
-            return Adb.UninstallPackage(this, packageName);
+            return Adb.UninstallPackage(packageName, this);
         }
 
         public Task<bool> IsPackageRunning(string packageName)
         {
-            return Adb.IsPackageRunning(this, packageName);
+            return Adb.IsPackageRunning(packageName, this);
         }
 
         public Task<bool> StartActivity(string packageName, string activity)
         {
-            return Adb.StartActivity(this, packageName, activity);
+            return Adb.StartActivity(packageName, activity, this);
         }
 
         public Task<Prop> GetProp(string propKey)
         {
-            return Adb.GetDeviceProp(this, propKey);
+            return Adb.GetDeviceProp(propKey, this);
         }
 
         public Task<PropTree> GetPropTree()
@@ -119,6 +135,16 @@ namespace AdbSharp
         public Task<bool> SendSignalToProcess(AndroidProcess process, int signal)
         {
             return Adb.SendSignalToProcess(process, signal, this);
+        }
+
+        public Task<Stream> TakeScreenshot()
+        {
+            return Adb.TakeScreenshot(this);
+        }
+
+        public Task<Stream> TakeScreenshot(string filePath)
+        {
+            return Adb.TakeScreenshot(filePath,this);
         }
 
         public Task<List<InputDevice>> GetInputDevices()
@@ -164,6 +190,16 @@ namespace AdbSharp
         public Task<string> GetDumpsysOutput()
         {
             return Adb.GetDumpsysOutput(this);
+        }
+
+        public Task Reboot(bool waitForBoot = false)
+        {
+            return Adb.Reboot(waitForBoot,this);
+        }
+
+        public Task<string> ExecuteShell(string command)
+        {
+            return Adb.ExecuteAdbShellCommand(command, this);
         }
 
         public override string ToString()
