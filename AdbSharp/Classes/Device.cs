@@ -137,9 +137,9 @@ namespace AdbSharp
             return Adb.SendSignalToProcess(process, signal, this);
         }
 
-        public Task<Stream> TakeScreenshot()
+        public Task TakeScreenshot(Stream outStream)
         {
-            return Adb.TakeScreenshot(this);
+            return Adb.TakeScreenshot(outStream, this);
         }
 
         public Task<Stream> TakeScreenshot(string filePath)

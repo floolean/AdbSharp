@@ -114,24 +114,26 @@ namespace AdbSharp
                     if (Command != null)
                         Command(string.Format(">> {0} {1}\n\n", command, arguments));
 
-                    //killProcessAction = () =>
-                    //{
-                    //    if (!process.HasExited)
-                    //        process.Kill();
-                    //};
-
-                    process.Start();
-
                     if (inStream != null)
                         inStream.CopyToAsync(process.StandardInput.BaseStream);
 
                     if (errStream != null)
                         process.StandardError.BaseStream.CopyToAsync(errStream);
 
-                    var fs = process.StandardOutput.BaseStream as FileStream;
+                    process.Start();
 
-                    while (fs.CanRead)
-                        fs.CopyTo(outStream);
+                    var baseStream = process.StandardOutput.BaseStream;
+                    int lastRead = 0;
+
+                    byte[] buffer = new byte[4096];
+                    do
+                    {
+                        lastRead = baseStream.Read(buffer, 0, buffer.Length);
+                        outStream.Write(buffer, 0, lastRead);
+
+                    } while (lastRead > 0);
+
+                    process.WaitForExit(10000);
 
                     if (Output != null)
                     {
@@ -150,7 +152,6 @@ namespace AdbSharp
             });
 
         }
-
 
     }
 }

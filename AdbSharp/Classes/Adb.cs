@@ -32,7 +32,7 @@ namespace AdbSharp
         const string DUMPSYS_COMMAND = "dumpsys";
         const string KILL_COMMAND = "kill -{0} {1}";
 
-        const string SCREENCAP_BIN_COMMAND = "screencap -p";
+        const string SCREENCAP_BIN_COMMAND = "screencap -p | sed 's/\r$//'";
         const string SCREENCAP_TOFILE_COMMAND = "screencap -p {0}";
         const string SCREENCAP_PATH_FORMAT = "\"/sdcard/{0}\"";
 
@@ -398,14 +398,14 @@ namespace AdbSharp
 
         }
 
-        public static async Task<Stream> TakeScreenshot(Device device = null)
+        public static async Task TakeScreenshot(Stream outStream, Device device = null)
         {
 
-            var outStream = new MemoryStream();
+            var screenScapCommand = string.Format(ADB_SHELL_COMMAND, SCREENCAP_BIN_COMMAND);
 
-            await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(SCREENCAP_BIN_COMMAND, device), outStream);
+            await Shell.Execute(AdbPath, ArgumentsWithDeviceSelection(screenScapCommand, device), outStream);
 
-            return outStream;
+            outStream.Position = 0;
 
         }
 
