@@ -47,8 +47,8 @@ namespace AdbSharp
         const string GET_DEVICE_PROPS_COMMAND = "getprop {0}";
         const string SET_DEVICE_PROP_COMMAND = "setprop {0} {1}";
 
-        const string SEND_TAP_EVENT_COMMAND = "input touchscreen tap {0} {1}";
-        const string SEND_SWIPE_EVENT_COMMAND = "input touchscreen swipe {0} {1} {2} {3} {4}";
+        const string SEND_TAP_EVENT_COMMAND = "input tap {0} {1}";
+        const string SEND_SWIPE_EVENT_COMMAND = "input swipe {0} {1} {2} {3} {4}";
         const string BEGIN_TOUCHEVENT_COMMAND = "sendevent {0} 3 57 {1}; sendevent {0} 3 53 {2}; sendevent {0} 3 54 {3}; sendevent {0} 3 48 {4}; sendevent {0} 3 58 {5}; sendevent {0} 0 2 0; sendevent {0} 0 0 0;";
         const string RELEASE_TOUCHEVENT_COMMAND = "sendevent {0} 0 2 0; sendevent {0} 0 0 0;";
         const string RELEASE_ALL_TOUCHEVENT_COMMAND = "sendevent {0} 3 57 -1; sendevent {0} 0 2 0; sendevent {0} 0 0 0;";
@@ -691,7 +691,31 @@ namespace AdbSharp
         static async void EnsureServerIsRunning()
         {
             if (!s_Started)
-                await Shell.Execute(AdbPath, ADB_STARTSERVER_COMMAND);
+                await StartServer();
+            s_Started = true;
+        }
+
+        public static Task<string> StartServer()
+        {
+            return Shell.Execute(AdbPath, ADB_STARTSERVER_COMMAND);
+        }
+
+        public static Task<string> KillServer()
+        {
+
+            s_Started = false;
+
+            return Shell.Execute(AdbPath, ADB_KILLSERVER_COMMAND);
+
+        }
+
+        public static async Task RestartServer()
+        {
+
+            await KillServer();
+
+            await StartServer();
+
         }
 
         static string[] TokenizeString(string text, string separator = "\n")

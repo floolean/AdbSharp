@@ -179,7 +179,7 @@ namespace AdbSharp
 
         public Task SendTapEvent( int x, int y)
         {
-            return Adb.SendTapEvent(x, y);
+            return Adb.SendTapEvent(x, y, this);
         }
 
 		public Task<string> GetLogcatOutput()
